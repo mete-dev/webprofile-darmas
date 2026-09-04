@@ -1,0 +1,6 @@
+{
+  "name": "PP Darul Mushtofa Assunniyyah",
+  "description": "Website resmi Pondok Pesantren Darul Mushtofa Assunniyyah Yosowilangun, Lumajang. Menyediakan informasi profil, sejarah, visi misi, lembaga pendidikan, ekstrakulikuler, update info, kalender agenda, jadwal sholat, galeri, serta pendaftaran santri baru.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
