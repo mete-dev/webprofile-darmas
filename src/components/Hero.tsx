@@ -1,6 +1,6 @@
-import React from 'react';
-import { ArrowRight, Info, CheckCircle2 } from 'lucide-react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect } from 'react';
+import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { PESANTREN_INFO } from '../data/pesantrenData';
 
 interface HeroProps {
@@ -8,6 +8,56 @@ interface HeroProps {
 }
 
 export default function Hero({ onNavigate }: HeroProps) {
+  const [berandaContent, setBerandaContent] = useState<string>(PESANTREN_INFO.tagline);
+  const [banners, setBanners] = useState<any[]>([]);
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+
+  useEffect(() => {
+    fetch('/api/web-sections')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const beranda = data.find(s => s.id === 'beranda');
+          if (beranda && beranda.content) {
+            setBerandaContent(beranda.content);
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('Gagal memuat dynamic beranda content:', err);
+      });
+
+    fetch('/api/banners')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const activeBanners = data.filter(b => b.isActive);
+          if (activeBanners.length > 0) {
+            setBanners(activeBanners);
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('Gagal memuat banners:', err);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (banners.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [banners.length]);
+
+  const handleNextBanner = () => {
+    setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
+  };
+
+  const handlePrevBanner = () => {
+    setCurrentBannerIndex((prev) => (prev - 1 + banners.length) % banners.length);
+  };
+
   const stats = [
     { value: PESANTREN_INFO.foundedYear, label: 'Tahun Berdiri' },
     { value: '1,500+', label: 'Santri Aktif' },
@@ -15,40 +65,55 @@ export default function Hero({ onNavigate }: HeroProps) {
     { value: '100%', label: 'Ahlussunnah wal Jama\'ah' },
   ];
 
+  const currentBannerImage = banners.length > 0 
+    ? banners[currentBannerIndex].imageUrl 
+    : 'https://images.unsplash.com/photo-1542856391-010fb87dcfed?auto=format&fit=crop&w=1920&q=80';
+
   return (
     <section
       id="hero"
-      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-emerald-950 pt-16"
+      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-emerald-950 pt-16 group"
     >
       {/* Visual background pattern & blend */}
       <div className="absolute inset-0 z-0">
-        <div
-          className="absolute inset-0 bg-cover bg-center mix-blend-overlay opacity-15"
-          style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1542856391-010fb87dcfed?auto=format&fit=crop&w=1920&q=80')`,
-          }}
-        />
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentBannerIndex}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.25 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1 }}
+            className="absolute inset-0 bg-cover bg-center mix-blend-overlay"
+            style={{ backgroundImage: `url('${currentBannerImage}')` }}
+          />
+        </AnimatePresence>
+        
         {/* Decorative Radial Lighting */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-amber-400/10 rounded-full blur-[120px] pointer-events-none" />
         <div className="absolute bottom-10 left-10 w-[300px] h-[300px] bg-emerald-400/5 rounded-full blur-[100px] pointer-events-none" />
+        
+        {/* Background fade to blend seamlessly with next section */}
+        <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-emerald-950 to-transparent pointer-events-none" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-        {/* Eyebrow Label */}
-        <motion.div
-          id="hero-eyebrow"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="inline-flex items-center gap-2 bg-emerald-900/60 border border-emerald-700/50 px-4 py-1.5 rounded-full text-amber-300 text-xs sm:text-sm font-medium mb-6"
-        >
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-          </span>
-          Penerimaan Santri Baru (PSB) Tahun Ajaran 2026/2027 Telah Dibuka
-        </motion.div>
+      {banners.length > 1 && (
+        <>
+          <button
+            onClick={handlePrevBanner}
+            className="absolute left-4 z-20 p-2 rounded-full bg-black/20 hover:bg-black/50 text-white/70 hover:text-white backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+          >
+            <ChevronLeft className="h-8 w-8" />
+          </button>
+          <button
+            onClick={handleNextBanner}
+            className="absolute right-4 z-20 p-2 rounded-full bg-black/20 hover:bg-black/50 text-white/70 hover:text-white backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+          >
+            <ChevronRight className="h-8 w-8" />
+          </button>
+        </>
+      )}
 
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-12 text-center">
         {/* Heading */}
         <motion.h1
           id="hero-title"
@@ -57,22 +122,21 @@ export default function Hero({ onNavigate }: HeroProps) {
           transition={{ duration: 0.8, delay: 0.1 }}
           className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white max-w-5xl mx-auto leading-tight"
         >
-          Selamat Datang di Pondok Pesantren <br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-200 to-amber-400 font-serif">
-            Darul Mushtofa Assunniyyah
+          <span className="block text-3xl sm:text-4xl md:text-5xl mb-2">Pondok Pesantren</span>
+          <span className="block text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-200 to-amber-400 font-serif">
+            Darul Mushthofa Assunniyyah
           </span>
         </motion.h1>
 
         {/* Tagline / Subtitle */}
-        <motion.p
+        <motion.div
           id="hero-description"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.2 }}
-          className="mt-6 text-base sm:text-lg md:text-xl text-emerald-100/90 max-w-3xl mx-auto font-normal leading-relaxed"
-        >
-          {PESANTREN_INFO.tagline}
-        </motion.p>
+          className="mt-6 text-base sm:text-lg md:text-xl text-emerald-100/90 max-w-3xl mx-auto font-normal leading-relaxed wysiwyg-content wysiwyg-hero"
+          dangerouslySetInnerHTML={{ __html: berandaContent }}
+        />
 
         {/* CTA Buttons */}
         <motion.div
@@ -125,9 +189,6 @@ export default function Hero({ onNavigate }: HeroProps) {
           </div>
         </motion.div>
       </div>
-
-      {/* Wave divider at bottom */}
-      <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-neutral-50 to-transparent pointer-events-none" />
     </section>
   );
 }

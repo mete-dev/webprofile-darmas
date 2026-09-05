@@ -144,9 +144,10 @@ export default function NewsSection({ initialCategory = 'Semua', initialArticleI
             </div>
 
             {/* Article Content Body */}
-            <div className="prose max-w-none text-neutral-700 text-sm sm:text-base leading-relaxed space-y-6 whitespace-pre-wrap pt-4 font-sans">
-              {activeArticle.content}
-            </div>
+            <div 
+              className="prose max-w-none text-neutral-700 text-sm sm:text-base leading-relaxed space-y-6 pt-4 font-sans wysiwyg-content"
+              dangerouslySetInnerHTML={{ __html: activeArticle.content }}
+            />
           </article>
 
           {/* Bottom Back Button */}

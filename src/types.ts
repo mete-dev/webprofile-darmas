@@ -13,6 +13,18 @@ export interface Announcement {
   attachmentName?: string;
   attachmentSize?: string;
   isPinned?: boolean;
+  googleDriveUrl?: string;
+}
+
+export interface SDMMember {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  imageUrl: string;
+  showOnWeb: boolean;
+  canAccessDashboard: boolean;
+  username?: string;
 }
 
 export interface NewsArticle {

@@ -19,11 +19,16 @@ async function startServer() {
 
   // Connection String Parsing & Robust Fallback
   let sql: ReturnType<typeof postgres> | null = null;
-  const dbUrl = process.env.SUPABASE_DB_URL || '';
+  let dbUrl = process.env.SUPABASE_DB_URL || '';
 
-  if (dbUrl) {
+  // Handle accidental environment variable swapping
+  if (!dbUrl.startsWith('postgres') && process.env.SUPABASE_ANON_KEY?.startsWith('postgres')) {
+    dbUrl = process.env.SUPABASE_ANON_KEY;
+  }
+
+  if (dbUrl && dbUrl.startsWith('postgres')) {
     console.log(`[Supabase DB] Parsing database connection URL...`);
-    const match = dbUrl.match(/postgresql:\/\/([^:]+):(.*)@([^:]+):(\d+)\/(.+)/);
+    const match = dbUrl.match(/postgres(?:ql)?:\/\/([^:]+):(.*)@([^:]+):(\d+)\/(.+)/);
     
     let optionsCandidates: any[] = [];
     if (match) {
@@ -165,7 +170,8 @@ async function startServer() {
           valid_until TEXT,
           attachment_name TEXT,
           attachment_size TEXT,
-          is_pinned BOOLEAN DEFAULT FALSE
+          is_pinned BOOLEAN DEFAULT FALSE,
+          google_drive_url TEXT
         )
       `;
 
@@ -216,9 +222,26 @@ async function startServer() {
           name TEXT NOT NULL,
           role TEXT NOT NULL,
           description TEXT,
-          image_url TEXT
+          image_url TEXT,
+          show_on_web BOOLEAN DEFAULT TRUE,
+          can_access_dashboard BOOLEAN DEFAULT FALSE,
+          username TEXT,
+          password TEXT,
+          permissions TEXT
         )
       `;
+
+      // Column migrations for existing tables
+      try {
+        await sql`ALTER TABLE announcements ADD COLUMN IF NOT EXISTS google_drive_url TEXT`;
+        await sql`ALTER TABLE sdm_members ADD COLUMN IF NOT EXISTS show_on_web BOOLEAN DEFAULT TRUE`;
+        await sql`ALTER TABLE sdm_members ADD COLUMN IF NOT EXISTS can_access_dashboard BOOLEAN DEFAULT FALSE`;
+        await sql`ALTER TABLE sdm_members ADD COLUMN IF NOT EXISTS username TEXT`;
+        await sql`ALTER TABLE sdm_members ADD COLUMN IF NOT EXISTS password TEXT`;
+        await sql`ALTER TABLE sdm_members ADD COLUMN IF NOT EXISTS permissions TEXT`;
+      } catch (migErr: any) {
+        console.log(`[Supabase DB] Column migration notice:`, migErr.message);
+      }
 
       // 7. gallery_items
       await sql`
@@ -295,9 +318,11 @@ async function startServer() {
       if (parseInt(webCount[0].count) === 0) {
         console.log(`[Supabase DB] Seeding web_sections...`);
         const sections = [
+          { id: 'beranda', title: 'Halaman Utama Beranda', content: 'Selamat Datang di Pondok Pesantren Darul Mushtofa Assunniyyah. Lembaga pendidikan Islam modern berbasis salafiah yang menyatukan keluhuran akhlak pesantren dengan keunggulan teknologi.', last_updated: '2026-09-04' },
           { id: 'sejarah', title: 'Sejarah Darul Mushtofa', content: 'Pondok Pesantren Darul Mushtofa Assunniyyah didirikan pada tahun 2011 di bawah asuhan para kiai sepuh guna membina moralitas bangsa, mencetak santri yang tafaqquh fiddin dan mandiri.', last_updated: '2026-09-04' },
-          { id: 'profil', title: 'Profil Umum', content: 'Lembaga pendidikan Islam modern berbasis salafiah yang menyatukan keluhuran akhlak pesantren dengan keunggulan teknologi.', last_updated: '2026-09-04' },
-          { id: 'visi_misi', title: 'Visi dan Misi', content: 'Visi: Terbentuknya generasi rabbani, mulia akhlak, luas ilmu, serta siap berkhidmat untuk umat.', last_updated: '2026-09-04' }
+          { id: 'visi_misi', title: 'Visi dan Misi', content: 'Visi:\nTerbentuknya generasi rabbani, mulia akhlak, luas ilmu, serta siap berkhidmat untuk umat.\n\nMisi:\n1. Menyelenggarakan pendidikan pesantren salafiah berkualitas.\n2. Mengintegrasikan IPTEK dan IMTAK.\n3. Membina akhlakul karimah santri.', last_updated: '2026-09-04' },
+          { id: 'lembaga', title: 'Lembaga Pendidikan & Kepengasuhan', content: 'Kami menaungi MTs, MA, Madrasah Diniyah (Madin), serta Program Khusus Tahfidzul Qur\'an 30 Juz bersand keilmuan kuat.', last_updated: '2026-09-04' },
+          { id: 'ekstrakulikuler', title: 'Ekstrakurikuler & Pengembangan Bakat', content: 'Mengembangkan bakat santri di bidang seni Islam (Hadrah, Kaligrafi), olahraga (Bela Diri Pagar Nusa, Futsal), jurnalistik, dan khitobah (pidato tiga bahasa).', last_updated: '2026-09-04' }
         ];
         for (const s of sections) {
           await sql`INSERT INTO web_sections (id, title, content, last_updated) VALUES (${s.id}, ${s.title}, ${s.content}, ${s.last_updated})`;
@@ -308,10 +333,7 @@ async function startServer() {
       const sdmCount = await sql`SELECT count(*) FROM sdm_members`;
       if (parseInt(sdmCount[0].count) === 0) {
         console.log(`[Supabase DB] Seeding sdm_members...`);
-        const members = [
-          { id: 'sdm-1', name: 'KH. Ahmad Husain', role: 'Pengasuh Utama', description: 'Alumni Rubat Tarim Hadramaut, pembimbing kajian kitab kuning fikh dan tasawuf.', image_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=300' },
-          { id: 'sdm-2', name: 'Ust. Muhammad Syafi\'i', role: 'Kepala Madrasah Diniyah', description: 'Pengajar Senior Nahwu Shorof dan Fathul Qorib.', image_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300' }
-        ];
+        const members: any[] = [];
         for (const m of members) {
           await sql`INSERT INTO sdm_members (id, name, role, description, image_url) VALUES (${m.id}, ${m.name}, ${m.role}, ${m.description}, ${m.image_url})`;
         }
@@ -352,6 +374,21 @@ async function startServer() {
 
   // --- API ROUTES ---
 
+  // In-memory fallbacks when database is offline or not connected
+  let fallbackAnnouncements = [...ANNOUNCEMENTS_DATA].map(a => ({
+    ...a,
+    googleDriveUrl: a.googleDriveUrl || 'https://drive.google.com/drive/folders/1official-pp-darulmushtofa'
+  }));
+
+  let fallbackSdm: any[] = [];
+
+  let fallbackNews = [...NEWS_ARTICLES];
+  let fallbackGallery = [
+    { id: 'gal-1', title: 'Kajian Kitab Kuning Fathul Mu\'in Malam Jumat', category: 'Kegiatan', imageUrl: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&q=80&w=600', date: '12 Agustus 2026' },
+    { id: 'gal-2', title: 'Wisuda & Khotmil Qur\'an Santriwan/wati', category: 'Prestasi', imageUrl: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&q=80&w=600', date: '25 Agustus 2026' },
+    { id: 'gal-3', title: 'Pawai Santri & Peringatan Hari Santri Nasional', category: 'Kegiatan', imageUrl: 'https://images.unsplash.com/photo-1577495508048-b635879837f1?auto=format&fit=crop&q=80&w=600', date: '22 Oktober 2026' }
+  ];
+
   // 1. Announcements API
   app.get('/api/announcements', async (req, res) => {
     if (sql) {
@@ -371,35 +408,56 @@ async function startServer() {
           validUntil: r.valid_until,
           attachmentName: r.attachment_name,
           attachmentSize: r.attachment_size,
-          isPinned: r.is_pinned
+          isPinned: r.is_pinned,
+          googleDriveUrl: r.google_drive_url || 'https://drive.google.com/drive/folders/1official-pp-darulmushtofa'
         }));
         return res.json(mapped);
       } catch (err: any) {
         console.error(`[API] Failed to fetch announcements from DB:`, err.message);
       }
     }
-    res.json(ANNOUNCEMENTS_DATA);
+    res.json(fallbackAnnouncements);
   });
 
   // Create Announcement
   app.post('/api/announcements', async (req, res) => {
-    const { title, referenceNumber, date, category, priority, summary, content, targetAudience, issuer, validUntil, attachmentName, attachmentSize, isPinned } = req.body;
+    const { title, referenceNumber, date, category, priority, summary, content, targetAudience, issuer, validUntil, attachmentName, attachmentSize, isPinned, googleDriveUrl } = req.body;
     const id = `ann-${Date.now()}`;
+    const newAnnouncement = {
+      id,
+      title,
+      referenceNumber: referenceNumber || '001/PP-DMA/2026',
+      date: date || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+      category: category || 'Penting',
+      priority: priority || 'normal',
+      summary: summary || '',
+      content: content || '',
+      targetAudience: targetAudience || 'Seluruh Santri & Wali Santri',
+      issuer: issuer || 'Sekretariat PP Darul Mushtofa',
+      validUntil: validUntil || '',
+      attachmentName: attachmentName || '',
+      attachmentSize: attachmentSize || '',
+      isPinned: isPinned || false,
+      googleDriveUrl: googleDriveUrl || 'https://drive.google.com/drive/folders/1official-pp-darulmushtofa'
+    };
+
     if (sql) {
       try {
         await sql`
           INSERT INTO announcements (
-            id, title, reference_number, date, category, priority, summary, content, target_audience, issuer, valid_until, attachment_name, attachment_size, is_pinned
+            id, title, reference_number, date, category, priority, summary, content, target_audience, issuer, valid_until, attachment_name, attachment_size, is_pinned, google_drive_url
           ) VALUES (
-            ${id}, ${title}, ${referenceNumber}, ${date}, ${category}, ${priority}, ${summary}, ${content}, ${targetAudience}, ${issuer}, ${validUntil || null}, ${attachmentName || null}, ${attachmentSize || null}, ${isPinned || false}
+            ${id}, ${title}, ${newAnnouncement.referenceNumber}, ${newAnnouncement.date}, ${category}, ${priority}, ${summary}, ${content}, ${targetAudience}, ${issuer}, ${validUntil || null}, ${attachmentName || null}, ${attachmentSize || null}, ${isPinned || false}, ${newAnnouncement.googleDriveUrl}
           )
         `;
+        fallbackAnnouncements.unshift(newAnnouncement);
         return res.json({ success: true, id });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB insertion failed for announcement, using fallback:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database service unavailable' });
+    fallbackAnnouncements.unshift(newAnnouncement);
+    res.json({ success: true, id });
   });
 
   // Delete Announcement
@@ -408,12 +466,58 @@ async function startServer() {
     if (sql) {
       try {
         await sql`DELETE FROM announcements WHERE id = ${id}`;
-        return res.json({ success: true });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB delete failed:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database unavailable' });
+    fallbackAnnouncements = fallbackAnnouncements.filter(a => a.id !== id);
+    res.json({ success: true });
+  });
+
+  // Update Announcement
+  app.put('/api/announcements/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, referenceNumber, category, priority, summary, content, issuer, isPinned, googleDriveUrl } = req.body;
+
+    if (sql) {
+      try {
+        await sql`
+          UPDATE announcements 
+          SET title = ${title},
+              reference_number = ${referenceNumber || null},
+              category = ${category},
+              priority = ${priority || 'normal'},
+              summary = ${summary},
+              content = ${content},
+              issuer = ${issuer || 'Sekretariat'},
+              is_pinned = ${isPinned ?? false},
+              google_drive_url = ${googleDriveUrl || null}
+          WHERE id = ${id}
+        `;
+      } catch (err: any) {
+        console.warn(`[API] DB update failed for announcement:`, err.message);
+      }
+    }
+
+    fallbackAnnouncements = fallbackAnnouncements.map(a => {
+      if (a.id === id) {
+        return {
+          ...a,
+          title: title || a.title,
+          referenceNumber: referenceNumber ?? a.referenceNumber,
+          category: category || a.category,
+          priority: priority || a.priority,
+          summary: summary || a.summary,
+          content: content || a.content,
+          issuer: issuer || a.issuer,
+          isPinned: isPinned ?? a.isPinned,
+          googleDriveUrl: googleDriveUrl ?? a.googleDriveUrl
+        };
+      }
+      return a;
+    });
+
+    res.json({ success: true });
   });
 
   // 2. News API
@@ -437,7 +541,7 @@ async function startServer() {
         console.error(`[API] Failed to fetch news from DB:`, err.message);
       }
     }
-    res.json(NEWS_ARTICLES);
+    res.json(fallbackNews);
   });
 
   // 3. Events API
@@ -468,6 +572,11 @@ async function startServer() {
   app.post('/api/events', async (req, res) => {
     const { title, date, time, location, description, category, speaker, targetAudience } = req.body;
     const id = `ev-${Date.now()}`;
+    
+    const newEvent = {
+      id, title, date, time, location, description, category, speaker, targetAudience
+    };
+
     if (sql) {
       try {
         await sql`
@@ -477,12 +586,46 @@ async function startServer() {
             ${id}, ${title}, ${date}, ${time}, ${location}, ${description}, ${category}, ${speaker || null}, ${targetAudience}
           )
         `;
+        UPCOMING_EVENTS.push(newEvent);
         return res.json({ success: true, id });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB save failed for events:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database service unavailable' });
+    UPCOMING_EVENTS.push(newEvent);
+    res.json({ success: true, id });
+  });
+
+  // Update Event
+  app.put('/api/events/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, date, time, location, description, category, speaker, targetAudience } = req.body;
+
+    if (sql) {
+      try {
+        await sql`
+          UPDATE events 
+          SET title = ${title},
+              date = ${date},
+              time = ${time},
+              location = ${location},
+              description = ${description},
+              category = ${category},
+              speaker = ${speaker || null},
+              target_audience = ${targetAudience}
+          WHERE id = ${id}
+        `;
+      } catch (err: any) {
+        console.warn(`[API] DB update failed for events:`, err.message);
+      }
+    }
+    
+    const index = UPCOMING_EVENTS.findIndex((e: any) => e.id === id);
+    if (index !== -1) {
+      UPCOMING_EVENTS[index] = { ...UPCOMING_EVENTS[index], title, date, time, location, description, category, speaker, targetAudience };
+    }
+    
+    res.json({ success: true });
   });
 
   // Delete Event
@@ -749,6 +892,14 @@ async function startServer() {
   });
 
   // 5. Laman Web API (web_sections)
+  let fallbackWebSections = [
+    { id: 'beranda', title: 'Halaman Utama Beranda', content: 'Selamat Datang di Pondok Pesantren Darul Mushtofa Assunniyyah. Lembaga pendidikan Islam modern berbasis salafiah yang menyatukan keluhuran akhlak pesantren dengan keunggulan teknologi.', lastUpdated: '2026-09-04' },
+    { id: 'sejarah', title: 'Sejarah Darul Mushtofa', content: 'Pondok Pesantren Darul Mushtofa Assunniyyah didirikan pada tahun 2011 di bawah asuhan para kiai sepuh guna membina moralitas bangsa, mencetak santri yang tafaqquh fiddin dan mandiri.', lastUpdated: '2026-09-04' },
+    { id: 'visi_misi', title: 'Visi dan Misi', content: "Visi:\nTerbentuknya generasi rabbani, mulia akhlak, luas ilmu, serta siap berkhidmat untuk umat.\n\nMisi:\n1. Menyelenggarakan pendidikan pesantren salafiah berkualitas.\n2. Mengintegrasikan IPTEK dan IMTAK.\n3. Membina akhlakul karimah santri.", lastUpdated: '2026-09-04' },
+    { id: 'lembaga', title: 'Lembaga Pendidikan & Kepengasuhan', content: 'Kami menaungi MTs, MA, Madrasah Diniyah (Madin), serta Program Khusus Tahfidzul Qur\'an 30 Juz bersand keilmuan kuat.', lastUpdated: '2026-09-04' },
+    { id: 'ekstrakulikuler', title: 'Ekstrakurikuler & Pengembangan Bakat', content: 'Mengembangkan bakat santri di bidang seni Islam (Hadrah, Kaligrafi), olahraga (Bela Diri Pagar Nusa, Futsal), jurnalistik, dan khitobah (pidato tiga bahasa).', lastUpdated: '2026-09-04' }
+  ];
+
   app.get('/api/web-sections', async (req, res) => {
     if (sql) {
       try {
@@ -764,16 +915,21 @@ async function startServer() {
       }
     }
     // Static Fallback
-    res.json([
-      { id: 'sejarah', title: 'Sejarah Darul Mushtofa', content: 'Pondok Pesantren Darul Mushtofa Assunniyyah didirikan pada tahun 2011 di bawah asuhan para kiai sepuh guna membina moralitas bangsa, mencetak santri yang tafaqquh fiddin dan mandiri.', lastUpdated: '2026-09-04' },
-      { id: 'profil', title: 'Profil Umum', content: 'Lembaga pendidikan Islam modern berbasis salafiah yang menyatukan keluhuran akhlak pesantren dengan keunggulan teknologi.', lastUpdated: '2026-09-04' },
-      { id: 'visi_misi', title: 'Visi dan Misi', content: 'Visi: Terbentuknya generasi rabbani, mulia akhlak, luas ilmu, serta siap berkhidmat untuk umat.', lastUpdated: '2026-09-04' }
-    ]);
+    res.json(fallbackWebSections);
   });
 
   app.post('/api/web-sections', async (req, res) => {
     const { id, title, content } = req.body;
     const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    
+    // Always update fallback in-memory state so both DB and offline modes stay correct
+    const idx = fallbackWebSections.findIndex(s => s.id === id);
+    if (idx !== -1) {
+      fallbackWebSections[idx] = { id, title, content, lastUpdated: today };
+    } else {
+      fallbackWebSections.push({ id, title, content, lastUpdated: today });
+    }
+
     if (sql) {
       try {
         await sql`
@@ -787,7 +943,7 @@ async function startServer() {
         return res.status(500).json({ error: err.message });
       }
     }
-    res.status(503).json({ error: 'Database service unavailable' });
+    res.json({ success: true });
   });
 
   // 6. SDM Members API
@@ -800,34 +956,74 @@ async function startServer() {
           name: r.name,
           role: r.role,
           description: r.description,
-          imageUrl: r.image_url
+          imageUrl: r.image_url,
+          showOnWeb: r.show_on_web ?? true,
+          canAccessDashboard: r.can_access_dashboard ?? false,
+          username: r.username || '',
+          password: r.password || '',
+          permissions: r.permissions || 'all'
         })));
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] Failed to fetch SDM from DB, using fallback:`, err.message);
       }
     }
     // Fallback
-    res.json([
-      { id: 'sdm-1', name: 'KH. Ahmad Husain', role: 'Pengasuh Utama', description: 'Alumni Rubat Tarim Hadramaut, pembimbing kajian kitab kuning fikh dan tasawuf.', imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=300' },
-      { id: 'sdm-2', name: 'Ust. Muhammad Syafi\'i', role: 'Kepala Madrasah Diniyah', description: 'Pengajar Senior Nahwu Shorof dan Fathul Qorib.', imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300' }
-    ]);
+    res.json(fallbackSdm.map(s => ({
+      username: '',
+      password: '',
+      permissions: 'all',
+      ...s
+    })));
   });
 
   app.post('/api/sdm', async (req, res) => {
-    const { name, role, description, imageUrl } = req.body;
-    const id = `sdm-${Date.now()}`;
+    const { id, name, role, description, imageUrl, showOnWeb, canAccessDashboard, username, password, permissions } = req.body;
+    const finalId = id || `sdm-${Date.now()}`;
+    const showWebVal = showOnWeb !== undefined ? Boolean(showOnWeb) : true;
+    const canAccessVal = canAccessDashboard !== undefined ? Boolean(canAccessDashboard) : false;
+
+    const sdmItem = {
+      id: finalId,
+      name,
+      role,
+      description: description || '',
+      imageUrl: imageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150',
+      showOnWeb: showWebVal,
+      canAccessDashboard: canAccessVal,
+      username: username || '',
+      password: password || '',
+      permissions: permissions || 'all'
+    };
+
     if (sql) {
       try {
         await sql`
-          INSERT INTO sdm_members (id, name, role, description, image_url)
-          VALUES (${id}, ${name}, ${role}, ${description}, ${imageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150'})
+          INSERT INTO sdm_members (id, name, role, description, image_url, show_on_web, can_access_dashboard, username, password, permissions)
+          VALUES (${finalId}, ${name}, ${role}, ${description}, ${sdmItem.imageUrl}, ${showWebVal}, ${canAccessVal}, ${sdmItem.username}, ${sdmItem.password}, ${sdmItem.permissions})
+          ON CONFLICT (id) DO UPDATE
+          SET name = EXCLUDED.name, role = EXCLUDED.role, description = EXCLUDED.description,
+              image_url = EXCLUDED.image_url, show_on_web = EXCLUDED.show_on_web, can_access_dashboard = EXCLUDED.can_access_dashboard,
+              username = EXCLUDED.username, password = EXCLUDED.password, permissions = EXCLUDED.permissions
         `;
-        return res.json({ success: true, id });
+        const existingIdx = fallbackSdm.findIndex(s => s.id === finalId);
+        if (existingIdx >= 0) {
+          fallbackSdm[existingIdx] = sdmItem;
+        } else {
+          fallbackSdm.push(sdmItem);
+        }
+        return res.json({ success: true, id: finalId });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB save failed for SDM:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database service unavailable' });
+
+    const existingIdx = fallbackSdm.findIndex(s => s.id === finalId);
+    if (existingIdx >= 0) {
+      fallbackSdm[existingIdx] = sdmItem;
+    } else {
+      fallbackSdm.push(sdmItem);
+    }
+    res.json({ success: true, id: finalId });
   });
 
   app.delete('/api/sdm/:id', async (req, res) => {
@@ -835,12 +1031,12 @@ async function startServer() {
     if (sql) {
       try {
         await sql`DELETE FROM sdm_members WHERE id = ${id}`;
-        return res.json({ success: true });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB delete failed:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database unavailable' });
+    fallbackSdm = fallbackSdm.filter(s => s.id !== id);
+    res.json({ success: true });
   });
 
   // 7. Gallery Items API
@@ -856,31 +1052,38 @@ async function startServer() {
           date: r.date
         })));
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] Failed to fetch gallery from DB:`, err.message);
       }
     }
-    res.json([
-      { id: 'gal-1', title: 'Kajian Kitab Bulanan', category: 'Kegiatan', imageUrl: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&q=80&w=600', date: '12 Agustus 2026' },
-      { id: 'gal-2', title: 'Wisuda Santri Madin', category: 'Prestasi', imageUrl: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&q=80&w=600', date: '25 Agustus 2026' }
-    ]);
+    res.json(fallbackGallery);
   });
 
   app.post('/api/gallery', async (req, res) => {
     const { title, category, imageUrl } = req.body;
     const id = `gal-${Date.now()}`;
     const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const newItem = {
+      id,
+      title,
+      category,
+      imageUrl: imageUrl || 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&q=80&w=600',
+      date: today
+    };
+
     if (sql) {
       try {
         await sql`
           INSERT INTO gallery_items (id, title, category, image_url, date)
-          VALUES (${id}, ${title}, ${category}, ${imageUrl || 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&q=80&w=600'}, ${today})
+          VALUES (${id}, ${title}, ${category}, ${newItem.imageUrl}, ${today})
         `;
+        fallbackGallery.unshift(newItem);
         return res.json({ success: true, id });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB save failed for gallery:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database service unavailable' });
+    fallbackGallery.unshift(newItem);
+    res.json({ success: true, id });
   });
 
   app.delete('/api/gallery/:id', async (req, res) => {
@@ -888,12 +1091,100 @@ async function startServer() {
     if (sql) {
       try {
         await sql`DELETE FROM gallery_items WHERE id = ${id}`;
-        return res.json({ success: true });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB delete failed for gallery:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database unavailable' });
+    fallbackGallery = fallbackGallery.filter(g => g.id !== id);
+    res.json({ success: true });
+  });
+
+  let fallbackBanners: any[] = [
+    {
+      id: 'banner-1',
+      title: 'Selamat Datang',
+      imageUrl: 'https://images.unsplash.com/photo-1542856391-010fb87dcfed?auto=format&fit=crop&w=1920&q=80',
+      isActive: true
+    }
+  ];
+
+  app.get('/api/banners', async (req, res) => {
+    if (sql) {
+      try {
+        const rows = await sql`SELECT * FROM hero_banners ORDER BY id DESC`;
+        if (rows.length > 0) {
+          return res.json(rows.map(r => ({
+            id: r.id,
+            title: r.title,
+            imageUrl: r.image_url,
+            isActive: r.is_active
+          })));
+        }
+      } catch (err: any) {
+        console.warn(`[API] Failed to fetch banners from DB:`, err.message);
+      }
+    }
+    res.json(fallbackBanners);
+  });
+
+  app.post('/api/banners', async (req, res) => {
+    const { title, imageUrl, isActive } = req.body;
+    const id = `ban-${Date.now()}`;
+    const newItem = {
+      id,
+      title,
+      imageUrl,
+      isActive: isActive !== undefined ? isActive : true
+    };
+
+    if (sql) {
+      try {
+        await sql`
+          INSERT INTO hero_banners (id, title, image_url, is_active)
+          VALUES (${id}, ${title}, ${newItem.imageUrl}, ${newItem.isActive})
+        `;
+        fallbackBanners.unshift(newItem);
+        return res.json({ success: true, id });
+      } catch (err: any) {
+        console.warn(`[API] DB save failed for banner:`, err.message);
+      }
+    }
+    fallbackBanners.unshift(newItem);
+    res.json({ success: true, id });
+  });
+
+  app.delete('/api/banners/:id', async (req, res) => {
+    const { id } = req.params;
+    if (sql) {
+      try {
+        await sql`DELETE FROM hero_banners WHERE id = ${id}`;
+      } catch (err: any) {
+        console.warn(`[API] DB delete failed for banner:`, err.message);
+      }
+    }
+    fallbackBanners = fallbackBanners.filter(b => b.id !== id);
+    res.json({ success: true });
+  });
+
+  app.put('/api/banners/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, imageUrl, isActive } = req.body;
+    if (sql) {
+      try {
+        await sql`
+          UPDATE hero_banners 
+          SET title = ${title}, image_url = ${imageUrl}, is_active = ${isActive}
+          WHERE id = ${id}
+        `;
+      } catch (err: any) {
+        console.warn(`[API] DB update failed for banner:`, err.message);
+      }
+    }
+    const idx = fallbackBanners.findIndex(b => b.id === id);
+    if (idx >= 0) {
+      fallbackBanners[idx] = { ...fallbackBanners[idx], title, imageUrl, isActive };
+    }
+    res.json({ success: true });
   });
 
   // 8. Santri Records API
@@ -958,18 +1249,74 @@ async function startServer() {
     const { title, summary, content, category, image, author, readTime } = req.body;
     const id = `n-${Date.now()}`;
     const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const newArticle = {
+      id,
+      title,
+      summary: summary || '',
+      content: content || '',
+      category: category || 'Berita',
+      image: image || 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&q=80&w=600',
+      date: today,
+      author: author || 'Humas Pesantren',
+      readTime: readTime || '3 menit baca'
+    };
+
     if (sql) {
       try {
         await sql`
           INSERT INTO news_articles (id, title, summary, content, category, image, date, author, read_time)
-          VALUES (${id}, ${title}, ${summary}, ${content}, ${category}, ${image || 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&q=80&w=600'}, ${today}, ${author || 'Humas Pesantren'}, ${readTime || '3 menit baca'})
+          VALUES (${id}, ${title}, ${newArticle.summary}, ${newArticle.content}, ${newArticle.category}, ${newArticle.image}, ${today}, ${newArticle.author}, ${newArticle.readTime})
         `;
+        fallbackNews.unshift(newArticle);
         return res.json({ success: true, id });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB save failed for news:`, err.message);
       }
     }
-    res.status(553).json({ error: 'Database unavailable' });
+    fallbackNews.unshift(newArticle);
+    res.json({ success: true, id });
+  });
+
+  // Update News
+  app.put('/api/news/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, summary, content, category, image, author, readTime } = req.body;
+
+    if (sql) {
+      try {
+        await sql`
+          UPDATE news_articles 
+          SET title = ${title},
+              summary = ${summary},
+              content = ${content},
+              category = ${category},
+              image = ${image},
+              author = ${author},
+              read_time = ${readTime}
+          WHERE id = ${id}
+        `;
+      } catch (err: any) {
+        console.warn(`[API] DB update failed for news:`, err.message);
+      }
+    }
+
+    fallbackNews = fallbackNews.map(n => {
+      if (n.id === id) {
+        return {
+          ...n,
+          title: title || n.title,
+          summary: summary || n.summary,
+          content: content || n.content,
+          category: category || n.category,
+          image: image ?? n.image,
+          author: author || n.author,
+          readTime: readTime || n.readTime
+        };
+      }
+      return n;
+    });
+
+    res.json({ success: true });
   });
 
   app.delete('/api/news/:id', async (req, res) => {
@@ -977,12 +1324,12 @@ async function startServer() {
     if (sql) {
       try {
         await sql`DELETE FROM news_articles WHERE id = ${id}`;
-        return res.json({ success: true });
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        console.warn(`[API] DB delete failed for news:`, err.message);
       }
     }
-    res.status(503).json({ error: 'Database unavailable' });
+    fallbackNews = fallbackNews.filter(n => n.id !== id);
+    res.json({ success: true });
   });
 
   // DB connection status API

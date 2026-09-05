@@ -244,40 +244,44 @@ export default function AnnouncementsSection({
               </div>
 
               {/* Formatted Content Text */}
-              <div className="text-neutral-800 text-sm sm:text-base leading-relaxed whitespace-pre-line font-normal space-y-4 pt-2">
-                {activeAnnouncement.content}
-              </div>
+              <div 
+                className="text-neutral-800 text-sm sm:text-base leading-relaxed font-normal pt-2 wysiwyg-content"
+                dangerouslySetInnerHTML={{ __html: activeAnnouncement.content }}
+              />
 
-              {/* Attachment Download Box if any */}
-              {activeAnnouncement.attachmentName && (
-                <div className="mt-8 pt-6 border-t border-neutral-200">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-3">
-                    Lampiran Dokumen Resmi:
-                  </h4>
-                  <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-emerald-500 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-red-100 text-red-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                        PDF
-                      </div>
-                      <div>
-                        <p className="font-bold text-neutral-900 text-sm">
-                          {activeAnnouncement.attachmentName}
-                        </p>
-                        <p className="text-xs text-neutral-500">
-                          Format Dokumen Resmi Bertanda Tangan ({activeAnnouncement.attachmentSize || 'PDF File'})
-                        </p>
-                      </div>
+              {/* Attachment Download Box with Google Drive Link */}
+              <div className="mt-8 pt-6 border-t border-neutral-200 space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                  Unduh Dokumen & Berkas Pengumuman:
+                </h4>
+                <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-emerald-600 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                      <Download className="h-5 w-5 text-emerald-800" />
                     </div>
-                    <button
-                      onClick={() => alert(`Mengunduh dokumen: ${activeAnnouncement.attachmentName}`)}
-                      className="bg-emerald-900 hover:bg-emerald-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl inline-flex items-center gap-2 shadow-sm transition-all active:scale-95 whitespace-nowrap w-full sm:w-auto justify-center"
+                    <div>
+                      <p className="font-bold text-neutral-900 text-sm">
+                        {activeAnnouncement.attachmentName || `Dokumen_${activeAnnouncement.title.substring(0, 25)}.pdf`}
+                      </p>
+                      <p className="text-xs text-neutral-500">
+                        Arsip Dokumen Resmi ({activeAnnouncement.attachmentSize || 'Google Drive File'})
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <a
+                      href={activeAnnouncement.googleDriveUrl || 'https://drive.google.com/drive/folders/1official-pp-darulmushtofa'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl inline-flex items-center gap-2 shadow-sm transition-all active:scale-95 whitespace-nowrap w-full sm:w-auto justify-center"
+                      title="Buka dan unduh dokumen dari Google Drive"
                     >
-                      <Download className="h-4 w-4" />
-                      <span>Unduh Dokumen</span>
-                    </button>
+                      <ExternalLink className="h-4 w-4" />
+                      <span>Unduh via Google Drive</span>
+                    </a>
                   </div>
                 </div>
-              )}
+              </div>
 
               {/* Official Verification Seal & Sign-off */}
               <div className="mt-10 pt-6 border-t border-neutral-200/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
@@ -474,16 +478,16 @@ export default function AnnouncementsSection({
                         <ArrowRight className="h-3.5 w-3.5" />
                       </button>
 
-                      {ann.attachmentName && (
-                        <button
-                          onClick={() => alert(`Mengunduh berkas: ${ann.attachmentName}`)}
-                          className="flex-1 md:flex-initial bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold px-3 py-2 rounded-xl inline-flex items-center justify-center gap-1.5 transition-all"
-                          title="Unduh Surat Resmi PDF"
-                        >
-                          <Download className="h-3.5 w-3.5 text-neutral-600" />
-                          <span className="text-[11px]">PDF ({ann.attachmentSize || 'Doc'})</span>
-                        </button>
-                      )}
+                      <a
+                        href={ann.googleDriveUrl || 'https://drive.google.com/drive/folders/1official-pp-darulmushtofa'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 md:flex-initial bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-2 rounded-xl inline-flex items-center justify-center gap-1.5 transition-all border border-emerald-200"
+                        title="Unduh berkas dokumen via Google Drive"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 text-emerald-700" />
+                        <span className="text-[11px] font-bold">Drive Unduh</span>
+                      </a>
                     </div>
                   </div>
                 </div>

@@ -35,12 +35,42 @@ interface ProfileProps {
 
 export default function Profile({ initialTab = 'history' }: ProfileProps) {
   const [activeTab, setActiveTab] = useState<ProfileTabType>(initialTab);
+  const [sdmList, setSdmList] = useState<any[]>(LEADERSHIP_TEAM);
+  const [sections, setSections] = useState<any[]>([]);
 
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    fetch('/api/sdm')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          // Only show members where showOnWeb is true or undefined
+          const visible = data.filter(m => m.showOnWeb !== false);
+          setSdmList(visible);
+        }
+      })
+      .catch(err => {
+        console.warn('Menggunakan data pengasuh default:', err);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/web-sections')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSections(data);
+        }
+      })
+      .catch(err => {
+        console.warn('Gagal memuat web-sections dinamis:', err);
+      });
+  }, []);
 
   const tabs = [
     { id: 'history', label: 'Sejarah Singkat', icon: BookOpen },
@@ -103,11 +133,12 @@ export default function Profile({ initialTab = 'history' }: ProfileProps) {
               >
                 <div className="lg:col-span-7">
                   <h3 className="text-2xl font-bold text-neutral-900 font-serif mb-4">
-                    Sanad Keilmuan Kokoh Sejak {PESANTREN_INFO.foundedYear}
+                    {sections.find(s => s.id === 'sejarah')?.title || `Sanad Keilmuan Kokoh Sejak ${PESANTREN_INFO.foundedYear}`}
                   </h3>
-                  <div className="space-y-4 text-neutral-600 leading-relaxed text-sm sm:text-base whitespace-pre-line">
-                    {HISTORY_TEXT}
-                  </div>
+                  <div 
+                    className="space-y-4 text-neutral-600 leading-relaxed text-sm sm:text-base wysiwyg-content"
+                    dangerouslySetInnerHTML={{ __html: sections.find(s => s.id === 'sejarah')?.content || HISTORY_TEXT }}
+                  />
                 </div>
                 <div className="lg:col-span-5 relative">
                   <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/10 to-emerald-500/10 rounded-2xl transform rotate-3 scale-102 -z-10" />
@@ -136,35 +167,49 @@ export default function Profile({ initialTab = 'history' }: ProfileProps) {
                 transition={{ duration: 0.3 }}
                 className="space-y-8"
               >
-                {/* Vision Box */}
-                <div className="p-6 sm:p-8 bg-amber-50/50 border border-amber-200/50 rounded-2xl shadow-sm">
-                  <h3 className="text-lg font-bold text-amber-800 tracking-wide uppercase mb-3 flex items-center gap-2 font-serif">
-                    <Compass className="h-5 w-5 text-amber-600" /> Visi Pesantren
-                  </h3>
-                  <p className="text-neutral-800 font-medium text-base sm:text-lg leading-relaxed italic">
-                    "{VISION_MISSION.vision}"
-                  </p>
-                </div>
-
-                {/* Mission Box */}
-                <div>
-                  <h3 className="text-lg font-bold text-emerald-850 tracking-wide uppercase mb-4 flex items-center gap-2 font-serif">
-                    <CheckCircle className="h-5 w-5 text-emerald-600" /> Misi Pesantren
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {VISION_MISSION.missions.map((mission, index) => (
-                      <div
-                        key={index}
-                        className="flex items-start gap-3 p-4 rounded-xl hover:bg-neutral-50 border border-transparent hover:border-neutral-200/50 transition-all duration-200"
-                      >
-                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                          {index + 1}
-                        </span>
-                        <p className="text-neutral-600 text-sm leading-relaxed">{mission}</p>
-                      </div>
-                    ))}
+                {sections.find(s => s.id === 'visi_misi') ? (
+                  <div className="p-6 sm:p-8 bg-emerald-50/40 border border-emerald-100 rounded-2xl shadow-2xs">
+                    <h3 className="text-lg font-bold text-emerald-950 tracking-wide uppercase mb-4 flex items-center gap-2 font-serif border-b border-emerald-100 pb-2">
+                      <Compass className="h-5 w-5 text-emerald-800" /> {sections.find(s => s.id === 'visi_misi')?.title || 'Visi dan Misi'}
+                    </h3>
+                    <div 
+                      className="text-neutral-700 leading-relaxed text-sm sm:text-base wysiwyg-content"
+                      dangerouslySetInnerHTML={{ __html: sections.find(s => s.id === 'visi_misi')?.content || '' }}
+                    />
                   </div>
-                </div>
+                ) : (
+                  <>
+                    {/* Vision Box */}
+                    <div className="p-6 sm:p-8 bg-amber-50/50 border border-amber-200/50 rounded-2xl shadow-sm">
+                      <h3 className="text-lg font-bold text-amber-800 tracking-wide uppercase mb-3 flex items-center gap-2 font-serif">
+                        <Compass className="h-5 w-5 text-amber-600" /> Visi Pesantren
+                      </h3>
+                      <p className="text-neutral-800 font-medium text-base sm:text-lg leading-relaxed italic">
+                        "{VISION_MISSION.vision}"
+                      </p>
+                    </div>
+
+                    {/* Mission Box */}
+                    <div>
+                      <h3 className="text-lg font-bold text-emerald-850 tracking-wide uppercase mb-4 flex items-center gap-2 font-serif">
+                        <CheckCircle className="h-5 w-5 text-emerald-600" /> Misi Pesantren
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {VISION_MISSION.missions.map((mission, index) => (
+                          <div
+                            key={index}
+                            className="flex items-start gap-3 p-4 rounded-xl hover:bg-neutral-50 border border-transparent hover:border-neutral-200/50 transition-all duration-200"
+                          >
+                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
+                              {index + 1}
+                            </span>
+                            <p className="text-neutral-600 text-sm leading-relaxed">{mission}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -179,11 +224,12 @@ export default function Profile({ initialTab = 'history' }: ProfileProps) {
               >
                 <div className="border-b border-neutral-100 pb-4">
                   <h3 className="text-xl sm:text-2xl font-bold text-neutral-900 font-serif">
-                    Unit Lembaga Pendidikan di Bawah Naungan Yayasan
+                    {sections.find(s => s.id === 'lembaga')?.title || 'Unit Lembaga Pendidikan di Bawah Naungan Yayasan'}
                   </h3>
-                  <p className="text-xs sm:text-sm text-neutral-500 mt-1">
-                    Memadukan kurikulum nasional terakreditasi unggul dengan kurikulum pesantren salafiyah.
-                  </p>
+                  <div 
+                    className="text-xs sm:text-sm text-neutral-500 mt-1 leading-relaxed wysiwyg-content"
+                    dangerouslySetInnerHTML={{ __html: sections.find(s => s.id === 'lembaga')?.content || 'Memadukan kurikulum nasional terakreditasi unggul dengan kurikulum pesantren salafiyah.' }}
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -251,11 +297,12 @@ export default function Profile({ initialTab = 'history' }: ProfileProps) {
               >
                 <div className="border-b border-neutral-100 pb-4">
                   <h3 className="text-xl sm:text-2xl font-bold text-neutral-900 font-serif">
-                    Kegiatan Ekstrakurikuler & Pengembangan Bakat Santri
+                    {sections.find(s => s.id === 'ekstrakulikuler')?.title || 'Kegiatan Ekstrakurikuler & Pengembangan Bakat Santri'}
                   </h3>
-                  <p className="text-xs sm:text-sm text-neutral-500 mt-1">
-                    Mengasah potensi minat bakat, kepemimpinan, seni Islam, dan bela diri tradisional para santri.
-                  </p>
+                  <div 
+                    className="text-xs sm:text-sm text-neutral-500 mt-1 leading-relaxed wysiwyg-content"
+                    dangerouslySetInnerHTML={{ __html: sections.find(s => s.id === 'ekstrakulikuler')?.content || 'Mengasah potensi minat bakat, kepemimpinan, seni Islam, dan bela diri tradisional para santri.' }}
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -343,7 +390,7 @@ export default function Profile({ initialTab = 'history' }: ProfileProps) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {LEADERSHIP_TEAM.map((leader) => (
+            {sdmList.map((leader) => (
               <div
                 key={leader.id}
                 id={`leader-card-${leader.id}`}
@@ -353,14 +400,14 @@ export default function Profile({ initialTab = 'history' }: ProfileProps) {
                 <div className="relative h-64 sm:h-72 overflow-hidden bg-neutral-100">
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10 opacity-60 group-hover:opacity-40 transition-opacity duration-300" />
                   <img
-                    src={leader.imageUrl}
+                    src={leader.imageUrl || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=300'}
                     alt={leader.name}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                   <div className="absolute bottom-4 left-4 right-4 z-20 text-white">
                     <span className="inline-block px-2.5 py-1 bg-amber-400 text-emerald-950 font-bold text-[10px] sm:text-xs rounded-full uppercase tracking-wider shadow">
-                      {leader.role.split('/')[0].trim()}
+                      {leader.role?.split('/')[0]?.trim() || 'SDM Pesantren'}
                     </span>
                   </div>
                 </div>
@@ -373,6 +420,12 @@ export default function Profile({ initialTab = 'history' }: ProfileProps) {
                   <p className="text-xs sm:text-sm font-medium text-neutral-500 mt-1">
                     {leader.role}
                   </p>
+
+                  {leader.description && (
+                    <p className="text-xs text-neutral-600 mt-2 line-clamp-2">
+                      {leader.description}
+                    </p>
+                  )}
 
                   {leader.education && (
                     <div className="mt-4 pt-4 border-t border-neutral-100 flex items-center gap-2 text-neutral-600 text-xs sm:text-sm">
